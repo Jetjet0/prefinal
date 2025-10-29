@@ -70,38 +70,68 @@ public class LibraryManagement {
     }
 
     public static void processReturn(config db, int bookId, int actualDays, String returnDate) {
+        // ✅ Convert slashes to dashes for date format (2025/01/01 → 2025-01-01)
+        returnDate = returnDate.replace("/", "-");
+        
         String findSql = "SELECT tb.borrower_email, tb.borrow_duration FROM tbl_borrowed tb WHERE tb.book_id = ? AND tb.status = 'Borrowed'";
         List<Map<String, Object>> info = db.fetchRecords(findSql, bookId);
 
-        if (!info.isEmpty()) {
-            String email = info.get(0).get("borrower_email").toString();
-            int agreedDays = Integer.parseInt(info.get(0).get("borrow_duration").toString());
-            int lateDays = actualDays - agreedDays;
-
-            // Get borrower name for penalty
-            String nameSql = "SELECT b_name FROM tbl_log WHERE u_email = ?";
-            List<Map<String, Object>> nameInfo = db.fetchRecords(nameSql, email);
-            String borrowerName = nameInfo.isEmpty() ? "Unknown" : nameInfo.get(0).get("b_name").toString();
-
-            // Update borrowed status
-            String updateSql = "UPDATE tbl_borrowed SET status = 'Returned', return_date = ?, actual_borrow_days = ? WHERE borrower_email = ? AND book_id = ?";
-            db.updateRecord(updateSql, returnDate, actualDays, email, bookId);
-
-            // Add penalty if late
-            if (lateDays > 0) {
-                double penalty = lateDays * 10;
-                String penaltySql = "INSERT INTO tbl_penalty (b_name, b_email, b_id, b_days, b_penal, b_dpenal) VALUES (?, ?, ?, ?, ?, NOW())";
-                db.addRecord(penaltySql, borrowerName, email, bookId, lateDays, penalty);
-                System.out.println("Penalty added: P" + penalty + " for " + lateDays + " late days");
-            } else {
-                System.out.println("No penalty - returned on time!");
-            }
-        } else {
+        if (info == null || info.isEmpty()) {
             System.out.println("Book not currently borrowed!");
+            return;
         }
+
+        // ✅ NULL CHECKS for database values
+        Object emailObj = info.get(0).get("borrower_email");
+        Object durationObj = info.get(0).get("borrow_duration");
+
+        if (emailObj == null || durationObj == null) {
+            System.out.println("Error: Missing borrower information!");
+            return;
+        }
+
+        String email = emailObj.toString();
+        int agreedDays;
+        
+        try {
+            agreedDays = Integer.parseInt(durationObj.toString());
+        } catch (NumberFormatException e) {
+            System.out.println("Error: Invalid borrow duration!");
+            return;
+        }
+
+        int lateDays = actualDays - agreedDays;
+
+        // Get borrower name for penalty
+        String nameSql = "SELECT b_name FROM tbl_log WHERE u_email = ?";
+        List<Map<String, Object>> nameInfo = db.fetchRecords(nameSql, email);
+        String borrowerName = "Unknown";
+        
+        if (nameInfo != null && !nameInfo.isEmpty() && nameInfo.get(0).get("b_name") != null) {
+            borrowerName = nameInfo.get(0).get("b_name").toString();
+        }
+
+        // Update borrowed status
+        String updateSql = "UPDATE tbl_borrowed SET status = 'Returned', return_date = ?, actual_borrow_days = ? WHERE borrower_email = ? AND book_id = ?";
+        db.updateRecord(updateSql, returnDate, actualDays, email, bookId);
+
+        // Add penalty if late
+        if (lateDays > 0) {
+            double penalty = lateDays * 10;
+            String penaltySql = "INSERT INTO tbl_penalty (b_name, b_email, b_id, b_days, b_penal, b_dpenal) VALUES (?, ?, ?, ?, ?, NOW())";
+            db.addRecord(penaltySql, borrowerName, email, bookId, lateDays, penalty);
+            System.out.println("Penalty added: P" + penalty + " for " + lateDays + " late days");
+        } else {
+            System.out.println("No penalty - returned on time!");
+        }
+        
+        System.out.println("Book returned successfully!");
     }
 
     public static void borrowBook(config db, String email, int bookId, String borrowDate, int days) {
+        // ✅ Convert slashes to dashes for date format
+        borrowDate = borrowDate.replace("/", "-");
+        
         String checkSql = "SELECT * FROM tbl_borrowed WHERE borrower_email = ? AND book_id = ? AND status = 'Borrowed'";
         List<Map<String, Object>> already = db.fetchRecords(checkSql, email, bookId);
         
@@ -229,7 +259,7 @@ public class LibraryManagement {
                         System.out.print("Actual Days borrowed: ");
                         int actualDays = sc.nextInt();
                         sc.nextLine();
-                        System.out.print("Return Date (YYYY-MM-DD): ");
+                        System.out.print("Return Date (YYYY-MM-DD or YYYY/MM/DD): ");
                         String returnDate = sc.nextLine();
                         processReturn(db, bookId, actualDays, returnDate);
                     }
@@ -255,7 +285,7 @@ public class LibraryManagement {
                         System.out.print("Book ID: ");
                         int bookId = sc.nextInt();
                         sc.nextLine();
-                        System.out.print("Borrow Date (YYYY-MM-DD): ");
+                        System.out.print("Borrow Date (YYYY-MM-DD or YYYY/MM/DD): ");
                         String borrowDate = sc.nextLine();
                         System.out.print("Days: ");
                         int days = sc.nextInt();
